@@ -1,0 +1,15 @@
+{
+  "name": "volumifier",
+  "version": "1.0.0",
+  "description": "Boost any tab's volume from 0% up to 600% with a sleek glassmorphic slider.",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "zip": "node build.mjs --zip",
+    "clean": "node -e \"import('node:fs').then(fs=>fs.rmSync('dist',{recursive:true,force:true}))\""
+  },
+  "devDependencies": {
+    "esbuild": "^0.24.0"
+  }
+}
