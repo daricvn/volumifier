@@ -401,6 +401,7 @@ body {
 /* ---------- auto-level toggle (compact chip) ---------- */
 .autoRow {
   display: flex;
+  gap: 10px;
   margin: 28px 2px 0;
   padding-top: 8px;
   border-top: 1px solid var(--stroke);

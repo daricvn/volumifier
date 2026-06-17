@@ -23,7 +23,7 @@ const OUT = "dist";
 // Each JS file is its own runtime context (service worker / offscreen / popup)
 // and they only talk via chrome.runtime messaging — so minify each in place,
 // never bundle them together.
-const JS_ENTRIES = ["background.js", "offscreen.js", "popup.js", "i18n.js"];
+const JS_ENTRIES = ["background.js", "offscreen.js", "popup.js", "i18n.js", "page-engine.js"];
 const CSS_ENTRIES = ["popup.css"];
 const HTML_FILES = ["popup.html", "offscreen.html"];
 

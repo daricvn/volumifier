@@ -11,6 +11,8 @@ Useful for quiet videos, faint conference calls, or podcasts recorded too low.
 - **Nonlinear slider** — extra width at low/mid volumes for precise aiming.
 - **Presets**: Mute, 100%, 200%, 400%, Max.
 - **Per-tab memory** — each tab remembers its level for the session.
+- **Fullscreen mode** — boost in-page instead of capturing the tab, so the
+  video player's fullscreen / PiP keep working (see caveat below).
 - **Toolbar badge** shows the current boost %.
 - **Smooth ramping** to avoid clicks/pops on big jumps.
 - Manifest V3, no remote code, no tracking.
@@ -21,11 +23,28 @@ Useful for quiet videos, faint conference calls, or podcasts recorded too low.
 | --------------- | ---------------------- | ------------------------------------------------------------ |
 | `manifest.json` | —                      | MV3 config, permissions, icons.                              |
 | `popup.html/css/js` | Action popup       | UI — slider, presets, power button.                          |
-| `background.js` | Service worker         | Gets the tab capture stream id, coordinates the engine.      |
+| `background.js` | Service worker         | Picks the engine, coordinates capture / injection.           |
 | `offscreen.js`  | Offscreen document     | Holds the `AudioContext` + `GainNode` per captured tab.      |
+| `page-engine.js`| Injected content script| In-page Web Audio graph used by **Fullscreen mode**.         |
 
 The captured tab audio is muted at source, so the offscreen engine reconnects the
 stream to the speakers through a `GainNode` — that gain (0–6) is the boost.
+
+### Fullscreen mode
+
+The default engine uses `chrome.tabCapture`, which puts the tab in a "being
+captured" state — and Chrome blocks the page's native `<video>` fullscreen while a
+tab is captured. **Fullscreen mode** sidesteps this: instead of capturing the tab,
+`page-engine.js` is injected into the page and routes each `<video>`/`<audio>`
+element through its own Web Audio graph (`createMediaElementSource → filter → gain
+→ destination`). No capture, so fullscreen, Picture-in-Picture and casting keep
+working.
+
+> **Caveat:** `createMediaElementSource` outputs silence for **cross-origin
+> (CORS-tainted)** media, and the script can only reach media in frames it's
+> allowed to script. So Fullscreen mode boosts **same-origin media elements** only
+> — for cross-origin embeds (many third-party players), use the default capture
+> mode. The popup says "No boostable media found" when it can't wire anything.
 
 ### Permissions
 
@@ -34,7 +53,8 @@ stream to the speakers through a `GainNode` — that gain (0–6) is the boost.
 | `tabCapture` | Capture the active tab's audio stream.                  |
 | `offscreen`  | Run an `AudioContext` outside the service worker.        |
 | `storage`    | Remember per-tab volume (`storage.session`).             |
-| `activeTab`  | Read the active tab's title/URL for the popup.           |
+| `activeTab`  | Read the active tab's title/URL; script it for Fullscreen mode. |
+| `scripting`  | Inject `page-engine.js` into the active tab (Fullscreen mode). |
 
 > Browser pages (`chrome://`, `edge://`, the Web Store, etc.) can't be captured —
 > the popup disables itself on those.

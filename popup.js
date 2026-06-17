@@ -7,6 +7,7 @@ const statusEl = document.getElementById("status");
 let tickEls = [];
 const powerBtn = document.getElementById("powerBtn");
 const autoBtn = document.getElementById("autoBtn");
+const fsBtn = document.getElementById("fsBtn");
 const volIcons = [...document.querySelectorAll(".volIcon")];
 const modeBtns = [...document.querySelectorAll(".modeBtn")];
 const audioTabsSection = document.getElementById("audioTabsSection");
@@ -22,11 +23,13 @@ let tabId = null;
 let currentTab = null;
 let mode = "generic";
 let auto = false; // auto-level (compressor/limiter) on/off
+let fs = false; // fullscreen mode: boost in-page (Web Audio) instead of tab capture
 let applyTimer = null;
 let restricted = false;
 
 const modeKey = (id) => `mode-${id}`;
 const autoKey = (id) => `auto-${id}`;
+const fsKey = (id) => `fs-${id}`;
 
 const MAX = 600;
 const POS_MAX = 600; // slider raw range
@@ -103,8 +106,9 @@ function pushVolume(volume) {
   clearTimeout(applyTimer);
   applyTimer = setTimeout(async () => {
     if (tabId == null) return;
-    const res = await send({ target: "background", type: "apply-volume", tabId, volume, mode, auto });
+    const res = await send({ target: "background", type: "apply-volume", tabId, volume, mode, auto, fs });
     if (!res?.ok) statusRaw(res?.error || t("cannotBoost"), true);
+    else if (fs && res.media === 0) status("fsNoMedia", null, true);
     else status(volume > 100 ? "boostingTo" : "volume", { v: volume });
   }, 40);
 }
@@ -191,15 +195,36 @@ autoBtn.addEventListener("click", () => {
   status(auto ? "autoOn" : "autoOff");
 });
 
+// Reflect the fullscreen-mode toggle state.
+function renderFs() {
+  fsBtn.classList.toggle("on", fs);
+  fsBtn.setAttribute("aria-checked", fs ? "true" : "false");
+}
+
+// Flipping fullscreen mode switches the boost engine (tab capture <-> in-page
+// Web Audio). Re-applying the current volume tears down one path and stands up
+// the other; the background coordinates the handoff.
+fsBtn.addEventListener("click", () => {
+  if (restricted) return;
+  fs = !fs;
+  renderFs();
+  if (tabId != null) chrome.storage.session.set({ [fsKey(tabId)]: fs });
+  const v = clamp(posToVol(Number(slider.value)));
+  pushVolume(v);
+  status(fs ? "fsOn" : "fsOff");
+});
+
 powerBtn.addEventListener("click", async () => {
   render(100);
   mode = "generic";
   auto = false;
+  fs = false;
   renderMode();
   renderAuto();
+  renderFs();
   if (tabId != null) {
     await send({ target: "background", type: "stop", tabId });
-    chrome.storage.session.remove([String(tabId), modeKey(tabId), autoKey(tabId)]);
+    chrome.storage.session.remove([String(tabId), modeKey(tabId), autoKey(tabId), fsKey(tabId)]);
   }
   status("resetDone");
 });
@@ -389,19 +414,29 @@ document.addEventListener("click", closeLangMenu);
     volIcons.forEach((b) => (b.disabled = true));
     modeBtns.forEach((b) => (b.disabled = true));
     autoBtn.disabled = true;
+    fsBtn.disabled = true;
     powerBtn.disabled = true;
     return;
   }
 
   // Restore last value + mode + auto-level for this tab (session-scoped).
-  const stored = await chrome.storage.session.get([String(tabId), modeKey(tabId), autoKey(tabId)]);
+  const stored = await chrome.storage.session.get([String(tabId), modeKey(tabId), autoKey(tabId), fsKey(tabId)]);
   const start = stored[String(tabId)] != null ? Number(stored[String(tabId)]) : 100;
   mode = stored[modeKey(tabId)] || "generic";
   auto = stored[autoKey(tabId)] === true;
+  fs = stored[fsKey(tabId)] === true;
   renderMode();
   renderAuto();
+  renderFs();
   render(start);
-  status("dragToBoost");
+
+  // In fs mode the boost lives in injected page script — navigation destroys it.
+  // Re-apply on popup open (which is a user gesture, so activeTab scripting works).
+  if (fs && start !== 100) {
+    pushVolume(start);
+  } else {
+    status("dragToBoost");
+  }
 
   refreshAudioTabs();
 })();
