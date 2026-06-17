@@ -2,6 +2,7 @@
   "name": "volumifier",
   "version": "1.0.0",
   "description": "Boost any tab's volume from 0% up to 600% with a sleek glassmorphic slider.",
+  "license": "MIT",
   "private": true,
   "type": "module",
   "scripts": {
