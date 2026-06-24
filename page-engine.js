@@ -26,7 +26,8 @@
 
   let ctx = null;
   const chains = []; // { el, source, filter, gain, comp, makeup, routed }
-  const wired = new WeakSet(); // elements already routed (can only wire once)
+  let wired = new WeakSet(); // elements already routed (can only wire once)
+  let pending = new WeakSet(); // elements awaiting a playable src
   let state = { volume: 100, mode: "generic", auto: false };
 
   function clampGain(volume) {
@@ -60,9 +61,15 @@
   // Wire one media element into its own chain. Returns false if it can't be
   // routed (already wired, cross-origin, or createMediaElementSource throws).
   function wire(el) {
-    if (wired.has(el) || !isPlayable(el)) return false;
+    if (wired.has(el)) return false;
+    if (!isPlayable(el)) { wireLater(el); return false; }
     try {
-      if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (!ctx) {
+        ctx = new (window.AudioContext || window.webkitAudioContext)();
+        ctx.onstatechange = () => {
+          if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
+        };
+      }
       const source = ctx.createMediaElementSource(el);
       const filter = ctx.createBiquadFilter();
       const gain = ctx.createGain();
@@ -86,6 +93,18 @@
       // another AudioContext, or for some cross-origin cases. Skip it.
       return false;
     }
+  }
+
+  // Defer wiring until the element has a playable src (MSE assigns src via JS,
+  // not DOM attribute, so MutationObserver misses it; loadedmetadata fires after).
+  function wireLater(el) {
+    if (pending.has(el)) return;
+    pending.add(el);
+    el.addEventListener("loadedmetadata", function handler() {
+      el.removeEventListener("loadedmetadata", handler);
+      pending.delete(el);
+      if (wire(el)) configureAll();
+    });
   }
 
   function route(c, auto) {
@@ -162,17 +181,21 @@
     mo.observe(document.documentElement, { childList: true, subtree: true });
   } catch (_) {}
 
-  // Resume the context if a gesture had it suspended (autoplay policy).
+  // Resume the context if suspended or interrupted (device switch, sleep/wake).
   function resume() {
-    if (ctx && ctx.state === "suspended") ctx.resume().catch(() => {});
+    if (ctx && ctx.state !== "running") ctx.resume().catch(() => {});
   }
 
-  // Boost amount we leave behind when this mode is turned off. We can't undo
-  // createMediaElementSource, so "off" = unity passthrough (element at 100%),
-  // which also lets the tabCapture path take over cleanly if re-enabled.
-  function passthrough() {
+  // Full engine reset: closes AudioContext, clears all chains and wired state.
+  // createMediaElementSource is irreversible per element, so we close the ctx
+  // entirely — next apply() creates a fresh one and re-wires all media.
+  // This lets Reset and fs-toggle reliably recover from any stuck state.
+  function rebuild() {
+    if (ctx) { try { ctx.close(); } catch (_) {} ctx = null; }
+    chains.length = 0;
+    wired = new WeakSet();
+    pending = new WeakSet();
     state = { volume: 100, mode: "generic", auto: false };
-    configureAll();
   }
 
   window.__volumifierPage = {
@@ -184,7 +207,7 @@
       return chains.length;
     },
     stop() {
-      passthrough();
+      rebuild();
     },
     count() {
       return chains.length;
