@@ -656,3 +656,57 @@ body {
   transition: color 0.2s ease;
 }
 .statusline.err { color: var(--hot1); }
+
+/* ---------- reload prompt (silent-capture recovery) ---------- */
+.reloadPrompt {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  margin-top: 16px;
+  padding: 11px 12px;
+  border-radius: 13px;
+  border: 1px solid color-mix(in srgb, var(--hot2) 38%, var(--stroke));
+  background: linear-gradient(135deg, color-mix(in srgb, var(--hot2) 13%, var(--glass)), var(--glass));
+  -webkit-backdrop-filter: blur(14px);
+  backdrop-filter: blur(14px);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.4), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  animation: reloadIn 0.24s ease;
+}
+.reloadPrompt[hidden] { display: none; }
+@keyframes reloadIn {
+  from { opacity: 0; transform: translateY(6px); }
+  to { opacity: 1; transform: none; }
+}
+.reloadIcon {
+  flex: none;
+  width: 30px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--hot2);
+  background: color-mix(in srgb, var(--hot2) 16%, transparent);
+}
+.reloadText { flex: 1; min-width: 0; }
+.reloadTitle { font-size: 12px; font-weight: 700; color: var(--txt); }
+.reloadHint {
+  font-size: 10px;
+  line-height: 1.35;
+  color: var(--sub);
+  margin-top: 2px;
+}
+.reloadBtn {
+  flex: none;
+  padding: 7px 13px;
+  border-radius: 9px;
+  border: 0;
+  font-size: 11.5px;
+  font-weight: 700;
+  color: #fff;
+  cursor: pointer;
+  background: linear-gradient(135deg, var(--accent4), var(--hot1));
+  box-shadow: 0 4px 14px rgba(255, 106, 0, 0.4);
+  transition: transform 0.15s ease, box-shadow 0.15s ease, filter 0.15s ease;
+}
+.reloadBtn:hover { transform: translateY(-1px); filter: brightness(1.08); box-shadow: 0 6px 18px rgba(255, 106, 0, 0.5); }
+.reloadBtn:active { transform: translateY(0); }

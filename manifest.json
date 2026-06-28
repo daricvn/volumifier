@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Volumifier",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Boost any tab's volume from 0% up to 600% with a sleek glassmorphic slider.",
   "permissions": ["tabCapture", "offscreen", "storage", "activeTab", "tabs", "scripting"],
   "background": {

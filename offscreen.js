@@ -4,6 +4,11 @@
 
 const engines = new Map(); // tabId -> { ctx, source, filter, gain, comp, makeup, stream, routed }
 
+// Log here AND forward to the service-worker console (the one the user watches).
+function swLog(line) {
+  chrome.runtime.sendMessage({ target: "background", type: "swlog", data: line }).catch(() => {});
+}
+
 // Per-mode biquad target. "generic" leaves the filter transparent and lets
 // the master gain carry the whole boost. "voice"/"bass" pin the master at
 // unity and pour the boost into a single band so only that band changes.
@@ -26,11 +31,25 @@ const COMP = {
 };
 const MAKEUP = 1.8; // linear (~+5 dB) makeup gain to lift quiet content
 
+// Does this engine still have a live captured audio track? A tab navigation
+// (Netflix browse -> /watch/) ends the capture; sometimes the "ended" event
+// never fires, leaving a dead engine that silently blocks re-capture.
+function isLive(e) {
+  return !!e && e.stream.getAudioTracks().some((t) => t.readyState === "live");
+}
+
 async function start(tabId, streamId, volume, mode, auto) {
-  // Reuse if already running.
-  if (engines.has(tabId)) {
-    setVolume(tabId, volume, mode, auto);
-    return;
+  // Reuse only if the existing capture is still live; a dead one must be torn
+  // down first so we re-capture the freshly-navigated page instead of poking a
+  // zombie stream (which is why the boost "only came back after a refresh").
+  const existing = engines.get(tabId);
+  if (existing) {
+    if (isLive(existing)) {
+      setVolume(tabId, volume, mode, auto);
+      return;
+    }
+    console.warn("[Volumifier] stale capture for tab", tabId, "- rebuilding");
+    stop(tabId);
   }
 
   const stream = await navigator.mediaDevices.getUserMedia({
@@ -43,6 +62,7 @@ async function start(tabId, streamId, volume, mode, auto) {
     video: false,
   });
 
+  const at = stream.getAudioTracks()[0];
   const ctx = new AudioContext();
   const source = ctx.createMediaStreamSource(stream);
   const filter = ctx.createBiquadFilter();
@@ -61,13 +81,73 @@ async function start(tabId, streamId, volume, mode, auto) {
   filter.connect(gain);
   // gain -> (comp -> makeup) -> destination, wired by route() per the auto flag.
 
-  engines.set(tabId, { ctx, source, filter, gain, comp, makeup, stream, routed: null });
+  // Tap the captured signal so we can measure whether ANY audio is flowing in.
+  // peak ~0 with ctx running => the capture grabbed a silent stream (the tab's
+  // audio is on a path tabCapture can't reach until the media is reloaded).
+  const analyser = ctx.createAnalyser();
+  analyser.fftSize = 2048;
+  source.connect(analyser);
+
+  engines.set(tabId, { ctx, source, filter, gain, comp, makeup, stream, routed: null, analyser, verified: false });
   configure(tabId, volume, mode, auto);
+
+  // The offscreen AudioContext can be created "suspended" (no user gesture in
+  // this document). A suspended ctx mutes the captured tab without replaying it
+  // -> silence. Resume it, and keep it running if it ever flips back.
+  if (ctx.state !== "running") {
+    try { await ctx.resume(); } catch (_) {}
+  }
+  ctx.onstatechange = () => {
+    if (ctx.state !== "running" && engines.has(tabId)) ctx.resume().catch(() => {});
+  };
 
   // If the stream ends (tab closed / navigated), clean up.
   stream.getAudioTracks().forEach((t) => {
-    t.addEventListener("ended", () => stop(tabId));
+    t.addEventListener("ended", () => {
+      console.warn("[Volumifier] capture track ended for tab", tabId);
+      stop(tabId);
+    });
   });
+
+  // Detect a SILENT capture: Chrome can hand back a live, unmuted track that
+  // carries no audio (the tab's sound is on a path tabCapture can't reach until
+  // the page reloads). Sample the captured signal; if nothing flows, the popup
+  // prompts the user to reload. Exit early as soon as any signal appears so the
+  // normal (working) case stays fast.
+  const silent = await measureSilent(analyser);
+  const e0 = engines.get(tabId);
+  if (e0 && !silent) e0.verified = true; // audio proven to flow -> never re-measure
+  swLog(`[Volumifier] capture tab ${tabId} silent=${silent} ctx=${ctx.state}`);
+  return { silent };
+}
+
+// Re-check an existing engine on a slider reuse. Once a capture has been proven
+// to carry audio (verified), skip the measurement so dragging stays smooth; only
+// a still-unproven capture (e.g. first created while the video was paused) pays
+// the ~660ms cost, and only until it either produces audio or the user reloads.
+async function measureEngine(tabId) {
+  const e = engines.get(tabId);
+  if (!e || !e.analyser) return { silent: false };
+  if (e.verified) return { silent: false };
+  const silent = await measureSilent(e.analyser);
+  if (!silent) e.verified = true;
+  return { silent };
+}
+
+const SILENCE_EPS = 1e-4;
+async function measureSilent(analyser) {
+  const buf = new Float32Array(analyser.fftSize);
+  let peak = 0;
+  for (let i = 0; i < 6; i++) {
+    await new Promise((r) => setTimeout(r, 110));
+    analyser.getFloatTimeDomainData(buf);
+    for (const v of buf) {
+      const a = Math.abs(v);
+      if (a > peak) peak = a;
+    }
+    if (peak >= SILENCE_EPS) return false; // audio is flowing — done
+  }
+  return peak < SILENCE_EPS;
 }
 
 // Route the master gain to the destination, optionally through the auto-level
@@ -158,17 +238,32 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       switch (msg.type) {
-        case "start":
-          await start(msg.tabId, msg.streamId, msg.volume, msg.mode, msg.auto);
-          sendResponse({ ok: true });
+        case "start": {
+          const diag = await start(msg.tabId, msg.streamId, msg.volume, msg.mode, msg.auto);
+          sendResponse({ ok: true, diag });
           break;
-        case "set-volume":
+        }
+        case "set-volume": {
           setVolume(msg.tabId, msg.volume, msg.mode, msg.auto);
-          sendResponse({ ok: true });
+          // Re-measure unproven captures so a dead one created while paused gets
+          // flagged once the video plays.
+          const diag = await measureEngine(msg.tabId);
+          sendResponse({ ok: true, diag });
           break;
-        case "has-stream":
-          sendResponse({ ok: true, active: engines.has(msg.tabId) });
+        }
+        case "has-stream": {
+          // Report active only if the capture is still live. Drop a dead engine
+          // here so the next apply() takes the re-capture path instead of
+          // set-volume on a stream that no longer produces audio.
+          const e = engines.get(msg.tabId);
+          const live = isLive(e);
+          if (e && !live) {
+            console.warn("[Volumifier] dropping dead capture for tab", msg.tabId);
+            stop(msg.tabId);
+          }
+          sendResponse({ ok: true, active: live });
           break;
+        }
         case "stop":
           stop(msg.tabId);
           sendResponse({ ok: true });

@@ -4,6 +4,8 @@ const valueEl = document.getElementById("value");
 const badge = document.getElementById("boostBadge");
 const tabName = document.getElementById("tabName");
 const statusEl = document.getElementById("status");
+const reloadPrompt = document.getElementById("reloadPrompt");
+const reloadBtn = document.getElementById("reloadBtn");
 let tickEls = [];
 const powerBtn = document.getElementById("powerBtn");
 const autoBtn = document.getElementById("autoBtn");
@@ -101,14 +103,30 @@ function clamp(v) {
   return Math.max(0, Math.min(MAX, v));
 }
 
+// Show/hide the "reload to boost" prompt (silent tab-capture recovery).
+function setReloadPrompt(show) {
+  reloadPrompt.hidden = !show;
+}
+
 // Debounced send to the background so dragging stays smooth.
 function pushVolume(volume) {
   clearTimeout(applyTimer);
   applyTimer = setTimeout(async () => {
     if (tabId == null) return;
     const res = await send({ target: "background", type: "apply-volume", tabId, volume, mode, auto, fs });
-    if (!res?.ok) statusRaw(res?.error || t("cannotBoost"), true);
-    else if (fs && res.media === 0) status("fsNoMedia", null, true);
+    if (!res?.ok) {
+      statusRaw(res?.error || t("cannotBoost"), true);
+      return;
+    }
+    // A fresh capture can come back silent (Chrome couldn't tap the tab's audio
+    // until it reloads). Show the reload prompt; hide it once a capture works.
+    if (res.silent === true) {
+      setReloadPrompt(true);
+      status("reloadNeeded", null, true);
+      return;
+    }
+    if (res.silent === false) setReloadPrompt(false);
+    if (fs && res.media === 0) status("fsNoMedia", null, true);
     else status(volume > 100 ? "boostingTo" : "volume", { v: volume });
   }, 40);
 }
@@ -214,11 +232,34 @@ fsBtn.addEventListener("click", () => {
   status(fs ? "fsOn" : "fsOff");
 });
 
+// Reload the tab to re-establish a capturable audio path, then re-apply the
+// current volume so the boost comes back without the user touching the slider.
+reloadBtn.addEventListener("click", async () => {
+  if (tabId == null) return;
+  setReloadPrompt(false);
+  status("reloadingPage");
+  const v = clamp(posToVol(Number(slider.value)));
+  try {
+    await chrome.tabs.reload(tabId);
+    // Wait for the reloaded tab to finish, then boost the fresh page.
+    const onDone = (id, info) => {
+      if (id === tabId && info.status === "complete") {
+        chrome.tabs.onUpdated.removeListener(onDone);
+        if (v !== 100) pushVolume(v);
+      }
+    };
+    chrome.tabs.onUpdated.addListener(onDone);
+  } catch (_) {
+    statusRaw(t("cannotBoost"), true);
+  }
+});
+
 powerBtn.addEventListener("click", async () => {
   render(100);
   mode = "generic";
   auto = false;
   fs = false;
+  setReloadPrompt(false);
   renderMode();
   renderAuto();
   renderFs();

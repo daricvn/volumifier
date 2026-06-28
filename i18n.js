@@ -62,6 +62,10 @@
       fsOn: "Fullscreen mode on — boosting in-page.",
       fsOff: "Fullscreen mode off — using tab capture.",
       fsNoMedia: "No boostable media found on this page.",
+      reloadNeeded: "Reload to boost this page",
+      reloadHint: "This tab's audio can't be captured until the page reloads.",
+      reloadBtn: "Reload",
+      reloadingPage: "Reloading page…",
     },
     zh: {
       reading: "正在读取当前标签页…",
@@ -98,6 +102,10 @@
       fsOn: "全屏模式已开启 — 在页面内增强。",
       fsOff: "全屏模式已关闭 — 使用标签页捕获。",
       fsNoMedia: "此页面未找到可增强的媒体。",
+      reloadNeeded: "重新加载以增强此页面",
+      reloadHint: "在页面重新加载前，无法捕获此标签页的音频。",
+      reloadBtn: "重新加载",
+      reloadingPage: "正在重新加载…",
     },
     ja: {
       reading: "アクティブなタブを読み込み中…",
@@ -134,6 +142,10 @@
       fsOn: "全画面モードオン — ページ内で増幅中。",
       fsOff: "全画面モードオフ — タブキャプチャを使用。",
       fsNoMedia: "このページに増幅可能なメディアがありません。",
+      reloadNeeded: "このページを増幅するには再読み込み",
+      reloadHint: "ページを再読み込みするまで、このタブの音声を取得できません。",
+      reloadBtn: "再読み込み",
+      reloadingPage: "再読み込み中…",
     },
     vi: {
       reading: "Đang đọc thẻ đang mở…",
@@ -170,6 +182,10 @@
       fsOn: "Chế độ toàn màn hình bật — tăng âm trong trang.",
       fsOff: "Chế độ toàn màn hình tắt — dùng thu âm thẻ.",
       fsNoMedia: "Không tìm thấy phương tiện để tăng âm trên trang này.",
+      reloadNeeded: "Tải lại để tăng âm trang này",
+      reloadHint: "Không thể thu âm thanh của thẻ này cho đến khi tải lại trang.",
+      reloadBtn: "Tải lại",
+      reloadingPage: "Đang tải lại trang…",
     },
     es: {
       reading: "Leyendo la pestaña activa…",
@@ -206,6 +222,10 @@
       fsOn: "Modo pantalla completa activado — amplificando en la página.",
       fsOff: "Modo pantalla completa desactivado — usando captura de pestaña.",
       fsNoMedia: "No se encontró contenido amplificable en esta página.",
+      reloadNeeded: "Recarga para amplificar esta página",
+      reloadHint: "No se puede capturar el audio de esta pestaña hasta recargar la página.",
+      reloadBtn: "Recargar",
+      reloadingPage: "Recargando página…",
     },
     fr: {
       reading: "Lecture de l'onglet actif…",
@@ -242,6 +262,10 @@
       fsOn: "Mode plein écran activé — amplification dans la page.",
       fsOff: "Mode plein écran désactivé — capture d'onglet.",
       fsNoMedia: "Aucun média amplifiable trouvé sur cette page.",
+      reloadNeeded: "Recharger pour amplifier cette page",
+      reloadHint: "L'audio de cet onglet ne peut pas être capturé avant le rechargement.",
+      reloadBtn: "Recharger",
+      reloadingPage: "Rechargement…",
     },
     de: {
       reading: "Aktiver Tab wird gelesen…",
@@ -278,6 +302,10 @@
       fsOn: "Vollbildmodus an — Verstärkung in der Seite.",
       fsOff: "Vollbildmodus aus — Tab-Aufnahme wird verwendet.",
       fsNoMedia: "Keine verstärkbaren Medien auf dieser Seite gefunden.",
+      reloadNeeded: "Neu laden, um diese Seite zu verstärken",
+      reloadHint: "Der Ton dieses Tabs kann erst nach dem Neuladen erfasst werden.",
+      reloadBtn: "Neu laden",
+      reloadingPage: "Seite wird neu geladen…",
     },
   };
 
