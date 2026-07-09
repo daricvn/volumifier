@@ -18,16 +18,6 @@ async function ensureOffscreen() {
   }
 }
 
-// Apply a volume to a tab. `fs` picks the engine:
-//   fs=false -> tabCapture (boosts any audio, but blocks the page's fullscreen),
-//   fs=true  -> in-page Web Audio (fullscreen keeps working; same-origin media only).
-// The two are mutually exclusive per tab — switching one off tears down the other.
-// Returns { media } in page mode so the popup can warn when nothing was boostable.
-async function applyVolume(tabId, volume, mode, auto, fs) {
-  if (fs) return applyPage(tabId, volume, mode, auto);
-  return applyCapture(tabId, volume, mode, auto);
-}
-
 // --- tabCapture path (default) ---
 async function applyCapture(tabId, volume, mode, auto) {
   // If the page engine was driving this tab, hand control back (unity passthrough)
@@ -114,34 +104,21 @@ async function applyPage(tabId, volume, mode, auto) {
   }
 }
 
-// Does the page have a media element that should be making sound right now?
-// Independent of tab.audible (which we poison by muting on capture): an element
-// that is playing, not muted, and has audio data. Used to tell a genuine
-// dead-capture (sound playing but capture empty) from a page that simply hasn't
-// started audio yet. allFrames covers cross-origin players (Netflix /watch/).
+// Independent of tab.audible (poisoned by capture muting): probe elements directly.
+// allFrames covers cross-origin players (Netflix /watch/).
 async function tabHasPlayingMedia(tabId) {
   try {
     const frames = await chrome.scripting.executeScript({
       target: { tabId, allFrames: true },
-      func: () => {
-        const list = [...document.querySelectorAll("video,audio")].map((m) => ({
-          paused: m.paused,
-          ended: m.ended,
-          muted: m.muted,
-          volume: m.volume,
-          readyState: m.readyState,
-          ct: Math.round((m.currentTime || 0) * 10) / 10,
-        }));
-        const playing = list.some(
+      func: () =>
+        [...document.querySelectorAll("video,audio")].some(
           (m) => !m.paused && !m.ended && !m.muted && m.volume > 0 && m.readyState >= 2
-        );
-        return { playing, list };
-      },
+        ),
     });
-    return frames.some((f) => f.result?.playing === true);
+    return frames.some((f) => f.result === true);
   } catch (e) {
     console.warn("[Volumifier] probe failed for tab", tabId, String(e.message || e));
-    return false; // can't script the tab -> assume not playing (no false prompt)
+    return false;
   }
 }
 
@@ -160,7 +137,8 @@ async function stopCapture(tabId) {
 // Drop the capture on navigation; the next slider nudge re-captures the
 // freshly-loaded page. (Only fires for tabs we're actually capturing.)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
-  if (!(changeInfo.status === "loading" || changeInfo.url)) return;
+  // changeInfo.url also fires for SPA pushState; only status==="loading" means a new document.
+  if (changeInfo.status !== "loading") return;
   if (!(await isCaptured(tabId))) return;
   await stopCapture(tabId);
   chrome.action.setBadgeText({ tabId, text: "" });
@@ -211,7 +189,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
   (async () => {
     try {
       if (msg.type === "apply-volume") {
-        const res = await applyVolume(msg.tabId, msg.volume, msg.mode, msg.auto, msg.fs);
+        const res = await (msg.fs ? applyPage : applyCapture)(msg.tabId, msg.volume, msg.mode, msg.auto);
         setBadge(msg.tabId, msg.volume);
         sendResponse({ ok: true, ...res });
       } else if (msg.type === "stop") {
