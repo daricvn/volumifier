@@ -23,7 +23,7 @@
 }
 
 body {
-  width: 380px;
+  width: 390px;
   font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
   color: var(--txt);
   background: radial-gradient(120% 120% at 50% 0%, var(--bg1) 0%, var(--bg0) 70%);
@@ -33,6 +33,7 @@ body {
 .app {
   padding: 18px 18px 16px;
   position: relative;
+  overflow: hidden;
 }
 
 /* subtle moving aurora behind everything */
@@ -481,6 +482,7 @@ body {
   flex-direction: column;
   gap: 6px;
   max-height: 188px;
+  overflow-x: hidden;
   overflow-y: auto;
 }
 .tabItem {
@@ -556,6 +558,7 @@ body {
 }
 .tabTitle {
   flex: 1;
+  min-width: 0;
   font-size: 12px;
   font-weight: 500;
   color: var(--txt);

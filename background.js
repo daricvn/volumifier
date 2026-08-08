@@ -63,6 +63,7 @@ async function applyCapture(tabId, volume, mode, auto) {
 // Tabs with a live capture, persisted so a service-worker restart doesn't lose
 // track of which tabs to invalidate on navigation.
 const CAP_KEY = "__capturedTabs";
+const _reapplyTimers = new Map();
 async function markCaptured(tabId, on) {
   const { [CAP_KEY]: arr = [] } = await chrome.storage.session.get(CAP_KEY);
   const set = new Set(arr);
@@ -137,11 +138,23 @@ async function stopCapture(tabId) {
 // Drop the capture on navigation; the next slider nudge re-captures the
 // freshly-loaded page. (Only fires for tabs we're actually capturing.)
 chrome.tabs.onUpdated.addListener(async (tabId, changeInfo) => {
-  // changeInfo.url also fires for SPA pushState; only status==="loading" means a new document.
-  if (changeInfo.status !== "loading") return;
-  if (!(await isCaptured(tabId))) return;
-  await stopCapture(tabId);
-  chrome.action.setBadgeText({ tabId, text: "" });
+  if (changeInfo.status === "complete") {
+    if (!(await isCaptured(tabId))) return;
+    // Re-apply tabCapture boost after full navigation if this tab had one active.
+    // fs mode is handled by the popup on open; skip it here.
+    const stored = await chrome.storage.session.get([String(tabId), `mode-${tabId}`, `auto-${tabId}`, `fs-${tabId}`]);
+    const volume = Number(stored[String(tabId)]);
+    if (!volume || volume === 100 || stored[`fs-${tabId}`] !== true) return;
+    await stopCapture(tabId);
+    clearTimeout(_reapplyTimers.get(tabId));
+    _reapplyTimers.set(tabId, setTimeout(async () => {
+      _reapplyTimers.delete(tabId);
+      try {
+        await applyCapture(tabId, volume, stored[`mode-${tabId}`] || "generic", stored[`auto-${tabId}`] === true);
+        setBadge(tabId, volume);
+      } catch (_) {}
+    }, 400));
+  }
 });
 
 function sendToOffscreen(msg) {
@@ -201,6 +214,18 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         await ensureOffscreen();
         const res = await sendToOffscreen({ type: "has-stream", tabId: msg.tabId });
         sendResponse({ ok: true, active: !!res?.active });
+      } else if (msg.type === "track-ended") {
+        // Capture track ended unexpectedly (YouTube video switch, stream interrupted).
+        // Re-capture if this tab still has a stored boost.
+        const stored = await chrome.storage.session.get([String(msg.tabId), `mode-${msg.tabId}`, `auto-${msg.tabId}`, `fs-${msg.tabId}`]);
+        const volume = Number(stored[String(msg.tabId)]);
+        if (volume && volume !== 100 && stored[`fs-${msg.tabId}`] !== true) {
+          try {
+            await applyCapture(msg.tabId, volume, stored[`mode-${msg.tabId}`] || "generic", stored[`auto-${msg.tabId}`] === true);
+            setBadge(msg.tabId, volume);
+          } catch (_) {}
+        }
+        sendResponse({ ok: true });
       }
     } catch (e) {
       sendResponse({ ok: false, error: String(e.message || e) });

@@ -101,11 +101,16 @@ async function start(tabId, streamId, volume, mode, auto) {
     if (ctx.state !== "running" && engines.has(tabId)) ctx.resume().catch(() => {});
   };
 
-  // If the stream ends (tab closed / navigated), clean up.
+  // If the stream ends (tab closed / navigated), clean up and ask background to re-capture.
+  // Guard: compare stream identity so a delayed "ended" from a replaced stream can't
+  // kill the newer engine that's already been set up for the same tabId.
   stream.getAudioTracks().forEach((t) => {
     t.addEventListener("ended", () => {
+      const current = engines.get(tabId);
+      if (!current || current.stream !== stream) return;
       console.warn("[Volumifier] capture track ended for tab", tabId);
       stop(tabId);
+      chrome.runtime.sendMessage({ target: "background", type: "track-ended", tabId }).catch(() => {});
     });
   });
 
